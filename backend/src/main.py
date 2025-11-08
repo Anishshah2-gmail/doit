@@ -80,7 +80,9 @@ async def root():
     }
 
 
-# Will add API routes here as they're implemented
-# from src.api.routes import auth, password
-# app.include_router(auth.router, prefix="/v1")
+# Include API routes
+from src.api.routes import auth
+app.include_router(auth.router, prefix="/v1")
+# Will add password routes when implemented
+# from src.api.routes import password
 # app.include_router(password.router, prefix="/v1")

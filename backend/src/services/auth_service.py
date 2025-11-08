@@ -1,0 +1,258 @@
+"""
+Authentication service handling user registration, login, and verification.
+Core business logic for user authentication system.
+"""
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from datetime import datetime, timedelta
+from typing import Optional
+from src.models.user import User
+from src.models.verification_token import VerificationToken
+from src.services.password_service import PasswordService
+from src.services.token_service import TokenService
+from src.services.email_service import EmailService
+from src.lib.security_logger import SecurityLogger
+from src.config import settings
+
+
+class AuthService:
+    """
+    Authentication service for user management.
+
+    Handles:
+    - User registration (FR-001)
+    - Email verification (FR-005, FR-017)
+    - Login authentication (FR-007)
+    - Account lockout (FR-009, FR-010)
+    """
+
+    def __init__(self, db: Session):
+        """
+        Initialize AuthService.
+
+        Args:
+            db: SQLAlchemy database session
+        """
+        self.db = db
+        self.password_service = PasswordService()
+        self.token_service = TokenService()
+        self.email_service = EmailService()
+        self.security_logger = SecurityLogger()
+
+    async def register_user(self, email: str, password: str, base_url: str = "http://localhost:8000") -> User:
+        """
+        Register a new user with email and password.
+
+        Args:
+            email: User email address (will be normalized)
+            password: Plain text password
+            base_url: Application base URL for verification link
+
+        Returns:
+            User: Created user object
+
+        Raises:
+            ValueError: If email already exists or validation fails
+
+        Requirements: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006
+        """
+        # Normalize email
+        email = email.lower()
+
+        # Check if user already exists (FR-006)
+        existing_user = self.db.query(User).filter(User.email == email).first()
+        if existing_user:
+            self.security_logger.log_registration_attempt(
+                email=email,
+                success=False,
+                reason="Email already registered"
+            )
+            raise ValueError("Email address already registered")
+
+        # Validate password strength (FR-003)
+        if not self.password_service.validate_strength(password):
+            self.security_logger.log_registration_attempt(
+                email=email,
+                success=False,
+                reason="Weak password"
+            )
+            raise ValueError("Password does not meet security requirements")
+
+        # Hash password (FR-004)
+        password_hash = self.password_service.hash_password(password)
+
+        # Create user
+        user = User(
+            email=email,
+            password_hash=password_hash
+        )
+        self.db.add(user)
+        self.db.flush()  # Get user ID without committing
+
+        # Generate verification token (FR-005)
+        token = self.token_service.generate_token()
+        verification_token = VerificationToken(
+            user_id=user.id,
+            token=token
+        )
+        self.db.add(verification_token)
+        self.db.commit()
+        self.db.refresh(user)
+
+        # Send verification email
+        await self.email_service.send_verification_email(
+            to=user.email,
+            token=token,
+            base_url=base_url
+        )
+
+        # Log successful registration
+        self.security_logger.log_registration_attempt(
+            email=user.email,
+            success=True
+        )
+
+        return user
+
+    async def verify_email(self, token: str) -> User:
+        """
+        Verify user email address using verification token.
+
+        Args:
+            token: Verification token from email
+
+        Returns:
+            User: User with verified email
+
+        Raises:
+            ValueError: If token is invalid or expired
+
+        Requirements: FR-005, FR-017
+        """
+        # Find token
+        verification_token = self.db.query(VerificationToken).filter(
+            VerificationToken.token == token
+        ).first()
+
+        if not verification_token:
+            self.security_logger.log_email_verification(
+                user_id="unknown",
+                email="unknown",
+                success=False,
+                reason="Invalid token"
+            )
+            raise ValueError("Invalid verification token")
+
+        # Check if already used
+        if verification_token.is_used:
+            user = self.db.query(User).filter(User.id == verification_token.user_id).first()
+            self.security_logger.log_email_verification(
+                user_id=verification_token.user_id,
+                email=user.email if user else "unknown",
+                success=False,
+                reason="Token already used"
+            )
+            raise ValueError("Verification token already used")
+
+        # Check if expired
+        if verification_token.is_expired():
+            user = self.db.query(User).filter(User.id == verification_token.user_id).first()
+            self.security_logger.log_email_verification(
+                user_id=verification_token.user_id,
+                email=user.email if user else "unknown",
+                success=False,
+                reason="Token expired"
+            )
+            raise ValueError("Verification token has expired")
+
+        # Mark token as used
+        verification_token.is_used = True
+        verification_token.used_at = datetime.utcnow()
+
+        # Update user
+        user = self.db.query(User).filter(User.id == verification_token.user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        user.email_verified = True
+        self.db.commit()
+        self.db.refresh(user)
+
+        # Log successful email verification
+        self.security_logger.log_email_verification(
+            user_id=user.id,
+            email=user.email,
+            success=True
+        )
+
+        return user
+
+    async def resend_verification(self, email: str, base_url: str = "http://localhost:8000") -> dict:
+        """
+        Resend verification email to user.
+
+        Args:
+            email: User email address
+            base_url: Application base URL for verification link
+
+        Returns:
+            dict: Status message
+
+        Raises:
+            ValueError: If user not found or already verified
+
+        Requirements: FR-005
+        """
+        email = email.lower()
+
+        # Find user
+        user = self.db.query(User).filter(User.email == email).first()
+        if not user:
+            # Don't reveal if email exists (security)
+            return {"message": "If the email exists and is not verified, a new verification email has been sent."}
+
+        # Check if already verified
+        if user.email_verified:
+            return {"message": "Email already verified"}
+
+        # Generate new token
+        token = self.token_service.generate_token()
+        verification_token = VerificationToken(
+            user_id=user.id,
+            token=token
+        )
+        self.db.add(verification_token)
+        self.db.commit()
+
+        # Send verification email
+        await self.email_service.send_verification_email(
+            to=user.email,
+            token=token,
+            base_url=base_url
+        )
+
+        return {"message": "Verification email sent"}
+
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        """
+        Get user by email address.
+
+        Args:
+            email: User email address
+
+        Returns:
+            User or None
+        """
+        return self.db.query(User).filter(User.email == email.lower()).first()
+
+    def get_user_by_id(self, user_id: str) -> Optional[User]:
+        """
+        Get user by ID.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            User or None
+        """
+        return self.db.query(User).filter(User.id == user_id).first()
