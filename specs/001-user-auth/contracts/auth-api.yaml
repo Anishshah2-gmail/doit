@@ -1,0 +1,613 @@
+openapi: 3.0.3
+info:
+  title: User Authentication API
+  version: 1.0.0
+  description: |
+    Secure user authentication system supporting registration, login, password reset, and logout.
+
+    **Security Features:**
+    - Argon2 password hashing
+    - Email verification required
+    - Account lockout after 5 failed attempts
+    - JWT-based session management
+    - OWASP Top 10 compliant
+
+    **Base URL:** `https://api.example.com/v1`
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: http://localhost:8000/v1
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User registration and login operations
+  - name: Password Management
+    description: Password reset and recovery operations
+  - name: Email Verification
+    description: Email verification operations
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: |
+        Creates a new user account with email and password. Sends verification email.
+
+        **User Story:** P1 - New User Registration
+
+        **Requirements:** FR-001, FR-002, FR-003, FR-004, FR-005, FR-006
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              valid:
+                value:
+                  email: user@example.com
+                  password: SecurePass123!
+      responses:
+        '201':
+          description: User created successfully. Verification email sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              examples:
+                success:
+                  value:
+                    message: Registration successful. Please check your email to verify your account.
+                    user_id: 550e8400-e29b-41d4-a716-446655440000
+                    email: user@example.com
+        '400':
+          description: Invalid request (validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidEmail:
+                  value:
+                    error: validation_error
+                    message: Invalid email format
+                    details:
+                      - field: email
+                        error: must be valid RFC 5322 email address
+                weakPassword:
+                  value:
+                    error: validation_error
+                    message: Password does not meet requirements
+                    details:
+                      - field: password
+                        error: must be at least 8 characters with uppercase, lowercase, digit, and special character
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicate:
+                  value:
+                    error: conflict
+                    message: Email address already registered
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: |
+        Authenticate user with email and password. Returns session token (JWT).
+
+        **User Story:** P2 - Existing User Login
+
+        **Requirements:** FR-007, FR-008, FR-009, FR-017
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              valid:
+                value:
+                  email: user@example.com
+                  password: SecurePass123!
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: Session token as HTTP-only cookie
+              schema:
+                type: string
+                example: session_token=eyJhbGc...; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              examples:
+                success:
+                  value:
+                    message: Login successful
+                    session_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    expires_at: "2025-11-09T01:35:00Z"
+                    user:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      email: user@example.com
+                      email_verified: true
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidCredentials:
+                  value:
+                    error: unauthorized
+                    message: Invalid email or password
+                emailNotVerified:
+                  value:
+                    error: unauthorized
+                    message: Email not verified. Please check your email for verification link.
+        '423':
+          description: Account locked due to failed login attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                accountLocked:
+                  value:
+                    error: locked
+                    message: Account temporarily locked due to failed login attempts. Please try again in 30 minutes.
+                    locked_until: "2025-11-08T02:05:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: |
+        Terminates the current user session.
+
+        **User Story:** P4 - User Logout
+
+        **Requirements:** FR-015
+      operationId: logoutUser
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logout successful
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/verify-email:
+    get:
+      tags:
+        - Email Verification
+      summary: Verify email address
+      description: |
+        Verifies user email using token from verification email.
+
+        **User Story:** P1 - New User Registration (verification step)
+
+        **Requirements:** FR-005, FR-017
+      operationId: verifyEmail
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: Email verification token from email link
+          schema:
+            type: string
+            example: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Email verified successfully. You can now log in.
+        '400':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidToken:
+                  value:
+                    error: invalid_token
+                    message: Invalid verification token
+                expiredToken:
+                  value:
+                    error: expired_token
+                    message: Verification token has expired. Please request a new one.
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/resend-verification:
+    post:
+      tags:
+        - Email Verification
+      summary: Resend verification email
+      description: |
+        Sends a new verification email to user (if email not already verified).
+      operationId: resendVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+      responses:
+        '200':
+          description: Verification email sent (or already verified)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: If the email exists and is not verified, a new verification email has been sent.
+        '429':
+          description: Too many requests (rate limiting)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rateLimited:
+                  value:
+                    error: rate_limit_exceeded
+                    message: Please wait before requesting another verification email
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /password/reset-request:
+    post:
+      tags:
+        - Password Management
+      summary: Request password reset
+      description: |
+        Sends password reset email with secure reset link.
+
+        **User Story:** P3 - Password Reset
+
+        **Requirements:** FR-011, FR-012, FR-019
+
+        **Security:** Generic response regardless of email existence (FR-019)
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+      responses:
+        '200':
+          description: Generic success response (security measure)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: If an account with that email exists, a password reset link has been sent.
+        '429':
+          description: Too many requests (rate limiting)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /password/reset:
+    post:
+      tags:
+        - Password Management
+      summary: Reset password with token
+      description: |
+        Sets new password using valid reset token from email.
+
+        **User Story:** P3 - Password Reset
+
+        **Requirements:** FR-012, FR-013, FR-014
+
+        **Side Effect:** Invalidates all existing sessions (FR-014)
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            examples:
+              valid:
+                value:
+                  token: 7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a
+                  new_password: NewSecurePass456!
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password reset successful. All active sessions have been terminated. Please log in with your new password.
+        '400':
+          description: Invalid or expired token, or weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidToken:
+                  value:
+                    error: invalid_token
+                    message: Invalid password reset token
+                expiredToken:
+                  value:
+                    error: expired_token
+                    message: Password reset token has expired. Please request a new one.
+                weakPassword:
+                  value:
+                    error: validation_error
+                    message: Password does not meet requirements
+                    details:
+                      - field: new_password
+                        error: must be at least 8 characters with uppercase, lowercase, digit, and special character
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: User email address (unique identifier)
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: |
+            Password must meet requirements:
+            - Minimum 8 characters
+            - At least one uppercase letter
+            - At least one lowercase letter
+            - At least one digit
+            - At least one special character
+          example: SecurePass123!
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Registration successful. Please check your email to verify your account.
+        user_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: SecurePass123!
+
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Login successful
+        session_token:
+          type: string
+          description: JWT session token (also set as HTTP-only cookie)
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_at:
+          type: string
+          format: date-time
+          description: Session expiration timestamp (UTC)
+          example: "2025-11-09T01:35:00Z"
+        user:
+          $ref: '#/components/schemas/UserInfo'
+
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        email_verified:
+          type: boolean
+          example: true
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - new_password
+      properties:
+        token:
+          type: string
+          description: Password reset token from email
+          example: 7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: New password meeting security requirements
+          example: NewSecurePass456!
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          enum:
+            - validation_error
+            - unauthorized
+            - forbidden
+            - conflict
+            - locked
+            - invalid_token
+            - expired_token
+            - rate_limit_exceeded
+            - internal_error
+          example: validation_error
+        message:
+          type: string
+          description: Human-readable error message
+          example: Invalid email format
+        details:
+          type: array
+          description: Detailed validation errors (optional)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              error:
+                type: string
+                example: must be valid RFC 5322 email address
+        locked_until:
+          type: string
+          format: date-time
+          description: Account unlock timestamp (only for locked error)
+          example: "2025-11-08T02:05:00Z"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT session token in Authorization header
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_token
+      description: JWT session token in HTTP-only cookie
+
+security:
+  - BearerAuth: []
+  - CookieAuth: []

@@ -1,0 +1,427 @@
+openapi: 3.0.3
+info:
+  title: Email Service Contract
+  version: 1.0.0
+  description: |
+    Contract specification for email service integration used by authentication system.
+
+    This is a contract test specification - not an actual API endpoint.
+    The authentication system depends on an email service to send verification
+    and password reset emails. This contract defines the expected interface.
+
+    **Implementation Notes:**
+    - Can use SMTP, SendGrid, Mailgun, AWS SES, or any email provider
+    - Must support async operation (non-blocking)
+    - Should handle retries and failures gracefully
+
+servers:
+  - url: http://internal/email-service
+    description: Internal email service (mock for testing)
+
+tags:
+  - name: Email Operations
+    description: Email sending operations
+
+paths:
+  /send:
+    post:
+      tags:
+        - Email Operations
+      summary: Send email
+      description: |
+        Sends an email via configured email provider.
+
+        **Contract Test:** Verify email service can send emails successfully.
+
+        **Requirements:** FR-005, FR-011
+      operationId: sendEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendEmailRequest'
+            examples:
+              verification:
+                summary: Email verification
+                value:
+                  to: user@example.com
+                  subject: Verify your email address
+                  html_body: |
+                    <p>Welcome! Please verify your email address by clicking the link below:</p>
+                    <a href="https://example.com/verify-email?token=abc123">Verify Email</a>
+                    <p>This link expires in 24 hours.</p>
+                  text_body: |
+                    Welcome! Please verify your email address by visiting this link:
+                    https://example.com/verify-email?token=abc123
+                    This link expires in 24 hours.
+              passwordReset:
+                summary: Password reset
+                value:
+                  to: user@example.com
+                  subject: Reset your password
+                  html_body: |
+                    <p>You requested a password reset. Click the link below to set a new password:</p>
+                    <a href="https://example.com/reset-password?token=xyz789">Reset Password</a>
+                    <p>This link expires in 1 hour.</p>
+                    <p>If you didn't request this, please ignore this email.</p>
+                  text_body: |
+                    You requested a password reset. Visit this link to set a new password:
+                    https://example.com/reset-password?token=xyz789
+                    This link expires in 1 hour.
+                    If you didn't request this, please ignore this email.
+      responses:
+        '200':
+          description: Email sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendEmailResponse'
+              examples:
+                success:
+                  value:
+                    message_id: msg_1a2b3c4d5e6f
+                    status: sent
+                    timestamp: "2025-11-08T01:35:00Z"
+        '400':
+          description: Invalid request (missing required fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailErrorResponse'
+              examples:
+                invalidEmail:
+                  value:
+                    error: invalid_request
+                    message: Invalid recipient email address
+        '500':
+          description: Email service error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailErrorResponse'
+              examples:
+                serviceError:
+                  value:
+                    error: service_error
+                    message: Email service temporarily unavailable
+
+components:
+  schemas:
+    SendEmailRequest:
+      type: object
+      required:
+        - to
+        - subject
+        - html_body
+      properties:
+        to:
+          type: string
+          format: email
+          description: Recipient email address
+          example: user@example.com
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Email subject line
+          example: Verify your email address
+        html_body:
+          type: string
+          description: Email body in HTML format
+          example: <p>Welcome! Please verify your email...</p>
+        text_body:
+          type: string
+          description: Email body in plain text (fallback for non-HTML clients)
+          example: Welcome! Please verify your email...
+        from_email:
+          type: string
+          format: email
+          description: Sender email address (optional, uses default if not provided)
+          example: noreply@example.com
+        from_name:
+          type: string
+          description: Sender display name (optional)
+          example: MyApp Authentication
+
+    SendEmailResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Unique identifier for sent email
+          example: msg_1a2b3c4d5e6f
+        status:
+          type: string
+          enum:
+            - sent
+            - queued
+          description: Email delivery status
+          example: sent
+        timestamp:
+          type: string
+          format: date-time
+          description: When email was sent/queued (UTC)
+          example: "2025-11-08T01:35:00Z"
+
+    EmailErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - rate_limit_exceeded
+            - service_error
+            - configuration_error
+          description: Error code
+          example: invalid_request
+        message:
+          type: string
+          description: Human-readable error message
+          example: Invalid recipient email address
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying (for rate limiting)
+          example: 60
+
+---
+
+# Email Service Implementation Guide
+
+## Purpose
+
+This contract defines the interface that the authentication system expects from an email service. It is used for:
+
+1. **Contract Testing**: Verify email service integration without sending real emails
+2. **Mock Implementation**: Create test doubles for unit/integration tests
+3. **Provider Independence**: Decouple from specific email providers
+
+## Implementation Options
+
+### Option 1: SMTP (Simple Mail Transfer Protocol)
+
+**Use Case:** Direct SMTP server (Gmail, Mailgun SMTP, custom SMTP server)
+
+```python
+# Example using aiosmtplib (async)
+import aiosmtplib
+from email.message import EmailMessage
+
+async def send_email(to: str, subject: str, html_body: str, text_body: str):
+    message = EmailMessage()
+    message["From"] = "noreply@example.com"
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(text_body)
+    message.add_alternative(html_body, subtype="html")
+
+    await aiosmtplib.send(
+        message,
+        hostname=os.getenv("SMTP_HOST"),
+        port=int(os.getenv("SMTP_PORT")),
+        username=os.getenv("SMTP_USER"),
+        password=os.getenv("SMTP_PASSWORD"),
+        use_tls=True
+    )
+```
+
+**Environment Variables:**
+- `SMTP_HOST`: SMTP server hostname
+- `SMTP_PORT`: SMTP server port (usually 587 for TLS)
+- `SMTP_USER`: SMTP username
+- `SMTP_PASSWORD`: SMTP password
+
+### Option 2: SendGrid API
+
+**Use Case:** Using SendGrid as email provider
+
+```python
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
+def send_email(to: str, subject: str, html_body: str, text_body: str):
+    message = Mail(
+        from_email='noreply@example.com',
+        to_emails=to,
+        subject=subject,
+        html_content=html_body,
+        plain_text_content=text_body
+    )
+    sg = SendGridAPIClient(os.getenv('SENDGRID_API_KEY'))
+    response = sg.send(message)
+    return response.status_code
+```
+
+**Environment Variables:**
+- `SENDGRID_API_KEY`: SendGrid API key
+
+### Option 3: AWS SES (Simple Email Service)
+
+**Use Case:** Using AWS for email delivery
+
+```python
+import boto3
+
+def send_email(to: str, subject: str, html_body: str, text_body: str):
+    ses_client = boto3.client('ses', region_name=os.getenv('AWS_REGION'))
+    response = ses_client.send_email(
+        Source='noreply@example.com',
+        Destination={'ToAddresses': [to]},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {
+                'Text': {'Data': text_body},
+                'Html': {'Data': html_body}
+            }
+        }
+    )
+    return response['MessageId']
+```
+
+**Environment Variables:**
+- `AWS_ACCESS_KEY_ID`: AWS access key
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `AWS_REGION`: AWS region (e.g., us-east-1)
+
+## Contract Testing Strategy
+
+### Unit Tests (Mock Email Service)
+
+```python
+import pytest
+from unittest.mock import AsyncMock
+
+@pytest.fixture
+def mock_email_service():
+    return AsyncMock(spec=EmailService)
+
+async def test_registration_sends_verification_email(mock_email_service):
+    # Arrange
+    user_email = "test@example.com"
+
+    # Act
+    await register_user(email=user_email, password="Pass123!")
+
+    # Assert
+    mock_email_service.send.assert_called_once()
+    call_args = mock_email_service.send.call_args
+    assert call_args.kwargs["to"] == user_email
+    assert "verify" in call_args.kwargs["subject"].lower()
+    assert "token=" in call_args.kwargs["html_body"]
+```
+
+### Integration Tests (Test Email Provider)
+
+**Use Mailtrap, MailHog, or similar test SMTP servers**
+
+```python
+@pytest.mark.integration
+async def test_email_delivery():
+    # Configure test SMTP (Mailtrap, MailHog, etc.)
+    email_service = EmailService(
+        host="smtp.mailtrap.io",
+        port=2525,
+        user="test_user",
+        password="test_pass"
+    )
+
+    # Send test email
+    result = await email_service.send(
+        to="test@example.com",
+        subject="Test Email",
+        html_body="<p>Test</p>",
+        text_body="Test"
+    )
+
+    # Verify email was sent
+    assert result.status == "sent"
+    assert result.message_id is not None
+```
+
+## Error Handling
+
+### Retry Strategy
+
+Emails should be retried on transient failures:
+
+- **Retry on**: Network errors, rate limiting (429), server errors (5xx)
+- **Don't retry on**: Invalid email (400), authentication errors (401)
+- **Retry Policy**: Exponential backoff (1s, 2s, 4s, 8s, 16s)
+- **Max Retries**: 5 attempts
+
+### Failure Scenarios
+
+1. **Email Service Down**: Queue emails for later delivery, log error
+2. **Invalid Email Address**: Reject registration immediately, don't queue
+3. **Rate Limit**: Backoff and retry, implement local rate limiting
+4. **Authentication Failure**: Alert ops team, check configuration
+
+## Email Templates
+
+### Verification Email Template
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Verify Your Email</title>
+</head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h2>Welcome to MyApp!</h2>
+    <p>Please verify your email address to complete registration.</p>
+    <p>
+        <a href="https://example.com/verify-email?token={{verification_token}}"
+           style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Verify Email Address
+        </a>
+    </p>
+    <p>Or copy and paste this link in your browser:</p>
+    <p>https://example.com/verify-email?token={{verification_token}}</p>
+    <p style="color: #666; font-size: 12px;">This link expires in 24 hours.</p>
+    <p style="color: #666; font-size: 12px;">If you didn't create an account, please ignore this email.</p>
+</body>
+</html>
+```
+
+### Password Reset Email Template
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Reset Your Password</title>
+</head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h2>Password Reset Request</h2>
+    <p>You requested a password reset for your MyApp account.</p>
+    <p>
+        <a href="https://example.com/reset-password?token={{reset_token}}"
+           style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Reset Password
+        </a>
+    </p>
+    <p>Or copy and paste this link in your browser:</p>
+    <p>https://example.com/reset-password?token={{reset_token}}</p>
+    <p style="color: #666; font-size: 12px;">This link expires in 1 hour.</p>
+    <p style="color: #e53935; font-size: 12px;"><strong>Security Notice:</strong> If you didn't request this password reset, please ignore this email. Your password will not be changed.</p>
+</body>
+</html>
+```
+
+## Testing Checklist
+
+- [ ] Email sends successfully with valid inputs
+- [ ] Email fails gracefully with invalid email address
+- [ ] HTML and text bodies both render correctly
+- [ ] Verification links include correct token
+- [ ] Reset links include correct token
+- [ ] Emails include proper subject lines
+- [ ] Retry logic works for transient failures
+- [ ] Rate limiting handled appropriately
+- [ ] Configuration errors detected and logged
