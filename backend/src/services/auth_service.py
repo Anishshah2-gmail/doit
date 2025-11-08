@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from src.models.user import User
 from src.models.verification_token import VerificationToken
+from src.models.password_reset_token import PasswordResetToken
 from src.services.password_service import PasswordService
 from src.services.token_service import TokenService
 from src.services.email_service import EmailService
@@ -390,3 +391,115 @@ class AuthService:
             User or None
         """
         return self.db.query(User).filter(User.id == user_id).first()
+
+    async def request_password_reset(self, email: str, base_url: str = "http://localhost:8000") -> dict:
+        """
+        Request password reset and send reset email.
+
+        Args:
+            email: User email address
+            base_url: Application base URL for reset link
+
+        Returns:
+            dict: Status message (generic for security)
+
+        Requirements: FR-014
+        """
+        email = email.lower()
+
+        # Find user
+        user = self.db.query(User).filter(User.email == email).first()
+        if not user:
+            # Don't reveal if email exists (security)
+            self.security_logger.log_password_reset_request(email=email)
+            return {"message": "If the email exists, a password reset link has been sent."}
+
+        # Generate reset token
+        token = self.token_service.generate_token()
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token=token
+        )
+        self.db.add(reset_token)
+        self.db.commit()
+
+        # Send reset email
+        await self.email_service.send_password_reset_email(
+            to=user.email,
+            token=token,
+            base_url=base_url
+        )
+
+        # Log request
+        self.security_logger.log_password_reset_request(
+            email=user.email
+        )
+
+        return {"message": "If the email exists, a password reset link has been sent."}
+
+    async def reset_password(self, token: str, new_password: str) -> dict:
+        """
+        Reset user password using reset token.
+
+        Args:
+            token: Password reset token
+            new_password: New password (plain text)
+
+        Returns:
+            dict: Success message
+
+        Raises:
+            ValueError: If token is invalid, expired, or used
+
+        Requirements: FR-015
+        """
+        # Find token
+        reset_token = self.db.query(PasswordResetToken).filter(
+            PasswordResetToken.token == token
+        ).first()
+
+        if not reset_token:
+            raise ValueError("Invalid password reset token")
+
+        # Check if already used
+        if reset_token.is_used:
+            raise ValueError("Password reset token already used")
+
+        # Check if expired
+        if reset_token.is_expired():
+            raise ValueError("Password reset token has expired")
+
+        # Validate new password strength
+        if not self.password_service.validate_strength(new_password):
+            raise ValueError("Password does not meet security requirements")
+
+        # Get user
+        user = self.db.query(User).filter(User.id == reset_token.user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        # Hash new password
+        new_password_hash = self.password_service.hash_password(new_password)
+
+        # Update user password
+        user.password_hash = new_password_hash
+
+        # Mark token as used
+        reset_token.is_used = True
+        reset_token.used_at = datetime.utcnow()
+
+        # Invalidate all existing sessions for security
+        from src.models.session import Session
+        self.db.query(Session).filter(Session.user_id == user.id).update(
+            {"is_active": False}
+        )
+
+        self.db.commit()
+
+        # Log successful password reset
+        self.security_logger.log_password_reset_success(
+            user_id=user.id,
+            email=user.email
+        )
+
+        return {"message": "Password reset successful. Please log in with your new password."}

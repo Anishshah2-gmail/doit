@@ -11,6 +11,8 @@ from src.api.schemas import (
     ResendVerificationRequest,
     LoginRequest,
     LoginResponse,
+    PasswordResetRequestSchema,
+    PasswordResetSchema,
     MessageResponse,
     ErrorResponse
 )
@@ -244,3 +246,77 @@ async def login(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_msg
             )
+
+
+@router.post(
+    "/password/reset-request",
+    response_model=MessageResponse
+)
+async def request_password_reset(
+    request: PasswordResetRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Request password reset link.
+
+    Sends password reset email with token (if email exists).
+
+    **User Story**: P2 - Password Reset
+
+    **Requirements**: FR-014
+
+    **Security**: Returns generic message (doesn't reveal if email exists)
+
+    **Returns**:
+    - 200: Generic success message
+    """
+    auth_service = AuthService(db)
+    result = await auth_service.request_password_reset(request.email)
+    return MessageResponse(message=result["message"])
+
+
+@router.post(
+    "/password/reset",
+    response_model=MessageResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid or expired token"}
+    }
+)
+async def reset_password(
+    request: PasswordResetSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using token.
+
+    Resets password using token from reset email.
+
+    **User Story**: P2 - Password Reset
+
+    **Requirements**: FR-015
+
+    **Process**:
+    1. Validates token exists and not used
+    2. Checks token not expired (1h limit)
+    3. Validates new password strength
+    4. Updates password with Argon2 hash
+    5. Marks token as used
+    6. Invalidates all existing sessions
+
+    **Returns**:
+    - 200: Password reset successful
+    - 400: Invalid, expired, or used token
+    """
+    auth_service = AuthService(db)
+
+    try:
+        result = await auth_service.reset_password(
+            token=request.token,
+            new_password=request.new_password
+        )
+        return MessageResponse(message=result["message"])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
