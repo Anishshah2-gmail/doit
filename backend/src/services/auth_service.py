@@ -503,3 +503,43 @@ class AuthService:
         )
 
         return {"message": "Password reset successful. Please log in with your new password."}
+
+    def logout(self, session_token: str) -> dict:
+        """
+        Logout user by deactivating session.
+
+        Args:
+            session_token: JWT session token
+
+        Returns:
+            dict: Success message
+
+        Raises:
+            ValueError: If session not found
+
+        Requirements: FR-016
+        """
+        from src.models.session import Session
+
+        # Find session
+        session = self.db.query(Session).filter(
+            Session.token == session_token,
+            Session.is_active == True
+        ).first()
+
+        if not session:
+            raise ValueError("Invalid or inactive session")
+
+        # Deactivate session
+        session.is_active = False
+        self.db.commit()
+
+        # Get user for logging
+        user = self.db.query(User).filter(User.id == session.user_id).first()
+        if user:
+            self.security_logger.log_logout(
+                user_id=user.id,
+                email=user.email
+            )
+
+        return {"message": "Logged out successfully"}

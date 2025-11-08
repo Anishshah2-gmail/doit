@@ -2,7 +2,7 @@
 Authentication API routes.
 Handles user registration, email verification, and login endpoints.
 """
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Header
 from sqlalchemy.orm import Session
 from src.api.schemas import (
     RegisterRequest,
@@ -318,5 +318,52 @@ async def reset_password(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post(
+    "/logout",
+    response_model=MessageResponse
+)
+async def logout(
+    authorization: str = Header(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Logout user by deactivating session.
+
+    Deactivates the current user session.
+
+    **User Story**: P3 - Logout
+
+    **Requirements**: FR-016
+
+    **Process**:
+    1. Extracts session token from Authorization header
+    2. Finds and deactivates the session
+    3. Logs logout event
+
+    **Returns**:
+    - 200: Logout successful
+    - 401: Invalid or inactive session
+    """
+    auth_service = AuthService(db)
+
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+
+    session_token = authorization.replace("Bearer ", "")
+
+    try:
+        result = auth_service.logout(session_token)
+        return MessageResponse(message=result["message"])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
