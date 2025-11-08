@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DoIt - Secure Authentication</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+  <!-- Navigation -->
+  <nav class="bg-white shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center">
+          <h1 class="text-2xl font-bold text-indigo-600">🔐 DoIt</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+          <a href="login.html" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Login</a>
+          <a href="register.html" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">Sign Up</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div class="text-center">
+      <h1 class="text-5xl font-extrabold text-gray-900 mb-4">
+        Secure Authentication
+        <span class="text-indigo-600">Made Simple</span>
+      </h1>
+      <p class="text-xl text-gray-600 mb-8">
+        Enterprise-grade security with user-friendly experience
+      </p>
+      <div class="flex justify-center space-x-4">
+        <a href="register.html" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg text-lg shadow-lg transform transition hover:scale-105">
+          Get Started
+        </a>
+        <a href="login.html" class="bg-white hover:bg-gray-50 text-indigo-600 font-bold py-3 px-8 rounded-lg text-lg shadow-lg border-2 border-indigo-600 transform transition hover:scale-105">
+          Sign In
+        </a>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div class="bg-white p-8 rounded-xl shadow-lg">
+        <div class="text-4xl mb-4">🔒</div>
+        <h3 class="text-xl font-bold mb-2">Secure by Default</h3>
+        <p class="text-gray-600">Argon2 password hashing, JWT sessions, and OWASP-compliant security</p>
+      </div>
+      <div class="bg-white p-8 rounded-xl shadow-lg">
+        <div class="text-4xl mb-4">✉️</div>
+        <h3 class="text-xl font-bold mb-2">Email Verification</h3>
+        <p class="text-gray-600">Automated email verification with secure token-based system</p>
+      </div>
+      <div class="bg-white p-8 rounded-xl shadow-lg">
+        <div class="text-4xl mb-4">🛡️</div>
+        <h3 class="text-xl font-bold mb-2">Account Protection</h3>
+        <p class="text-gray-600">Account lockout after failed attempts and password reset functionality</p>
+      </div>
+    </div>
+
+    <!-- Tech Stack -->
+    <div class="mt-20 bg-white rounded-xl shadow-lg p-8">
+      <h2 class="text-2xl font-bold text-center mb-8">Built With Modern Technology</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+        <div class="p-4">
+          <div class="text-3xl mb-2">🐍</div>
+          <p class="font-semibold">FastAPI</p>
+        </div>
+        <div class="p-4">
+          <div class="text-3xl mb-2">🗄️</div>
+          <p class="font-semibold">SQLAlchemy</p>
+        </div>
+        <div class="p-4">
+          <div class="text-3xl mb-2">🔑</div>
+          <p class="font-semibold">JWT Tokens</p>
+        </div>
+        <div class="p-4">
+          <div class="text-3xl mb-2">🎨</div>
+          <p class="font-semibold">Tailwind CSS</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white mt-20 py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-600">
+      <p>Built with ❤️ using spec-driven development</p>
+    </div>
+  </footer>
+</body>
+</html>

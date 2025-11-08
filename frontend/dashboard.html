@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - DoIt</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+  <!-- Navigation -->
+  <nav class="bg-white shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center">
+          <h1 class="text-2xl font-bold text-indigo-600">🔐 DoIt</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+          <span id="userEmail" class="text-gray-700 text-sm"></span>
+          <button id="logoutButton" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Welcome Section -->
+    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+      <h1 class="text-3xl font-bold text-gray-900 mb-4">
+        Welcome to your Dashboard! 🎉
+      </h1>
+      <p class="text-gray-600">
+        You have successfully authenticated with DoIt secure authentication system.
+      </p>
+    </div>
+
+    <!-- User Info Card -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Your Account</h2>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center py-2 border-b">
+            <span class="text-gray-600">User ID:</span>
+            <span id="userId" class="font-mono text-sm text-gray-900"></span>
+          </div>
+          <div class="flex justify-between items-center py-2 border-b">
+            <span class="text-gray-600">Email:</span>
+            <span id="userEmailDetail" class="font-medium text-gray-900"></span>
+          </div>
+          <div class="flex justify-between items-center py-2">
+            <span class="text-gray-600">Email Verified:</span>
+            <span id="emailVerified" class="px-3 py-1 rounded-full text-sm"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session Info Card -->
+      <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Session Info</h2>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center py-2 border-b">
+            <span class="text-gray-600">Status:</span>
+            <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+              Active
+            </span>
+          </div>
+          <div class="py-2">
+            <span class="text-gray-600 block mb-2">Session Token:</span>
+            <code id="sessionToken" class="block p-3 bg-gray-100 rounded text-xs break-all"></code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="mt-8 bg-white rounded-lg shadow-lg p-8">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Security Features</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="text-center p-6 bg-indigo-50 rounded-lg">
+          <div class="text-4xl mb-3">🔒</div>
+          <h3 class="font-bold mb-2">Argon2 Hashing</h3>
+          <p class="text-sm text-gray-600">Industry-standard password security</p>
+        </div>
+        <div class="text-center p-6 bg-indigo-50 rounded-lg">
+          <div class="text-4xl mb-3">🎫</div>
+          <h3 class="font-bold mb-2">JWT Sessions</h3>
+          <p class="text-sm text-gray-600">Secure token-based authentication</p>
+        </div>
+        <div class="text-center p-6 bg-indigo-50 rounded-lg">
+          <div class="text-4xl mb-3">🛡️</div>
+          <h3 class="font-bold mb-2">Account Protection</h3>
+          <p class="text-sm text-gray-600">Lockout after failed login attempts</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions Section -->
+    <div class="mt-8 bg-white rounded-lg shadow-lg p-8">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <a href="reset-password.html" class="block p-4 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
+          <h3 class="font-bold text-indigo-900 mb-1">🔑 Change Password</h3>
+          <p class="text-sm text-gray-600">Update your password for security</p>
+        </a>
+        <button onclick="testProtectedRoute()" class="text-left p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+          <h3 class="font-bold text-blue-900 mb-1">🧪 Test API</h3>
+          <p class="text-sm text-gray-600">Make a test API call</p>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    // Protect this page - redirect to login if not authenticated
+    protectPage();
+
+    // Load user information
+    const user = AuthAPI.getCurrentUser();
+    const sessionToken = localStorage.getItem('session_token');
+
+    if (user) {
+      // Display user info
+      document.getElementById('userEmail').textContent = user.email;
+      document.getElementById('userId').textContent = user.id;
+      document.getElementById('userEmailDetail').textContent = user.email;
+      document.getElementById('sessionToken').textContent = sessionToken;
+
+      // Email verification status
+      const verifiedElement = document.getElementById('emailVerified');
+      if (user.email_verified) {
+        verifiedElement.textContent = '✅ Verified';
+        verifiedElement.classList.add('bg-green-100', 'text-green-800', 'font-medium');
+      } else {
+        verifiedElement.textContent = '❌ Not Verified';
+        verifiedElement.classList.add('bg-red-100', 'text-red-800', 'font-medium');
+      }
+    }
+
+    // Handle logout
+    document.getElementById('logoutButton').addEventListener('click', async () => {
+      try {
+        await AuthAPI.logout();
+        window.location.href = 'login.html';
+      } catch (error) {
+        console.error('Logout error:', error);
+        // Clear local storage anyway and redirect
+        localStorage.clear();
+        window.location.href = 'login.html';
+      }
+    });
+
+    // Test protected route function
+    async function testProtectedRoute() {
+      alert('This is a protected page that requires authentication!\n\nYour session token is being sent with requests to the backend API.');
+    }
+  </script>
+</body>
+</html>
