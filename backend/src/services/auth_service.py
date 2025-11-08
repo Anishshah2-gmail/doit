@@ -11,7 +11,9 @@ from src.models.verification_token import VerificationToken
 from src.services.password_service import PasswordService
 from src.services.token_service import TokenService
 from src.services.email_service import EmailService
+from src.services.jwt_service import JWTService
 from src.lib.security_logger import SecurityLogger
+from src.models.session import Session
 from src.config import settings
 
 
@@ -37,6 +39,7 @@ class AuthService:
         self.password_service = PasswordService()
         self.token_service = TokenService()
         self.email_service = EmailService()
+        self.jwt_service = JWTService()
         self.security_logger = SecurityLogger()
 
     async def register_user(self, email: str, password: str, base_url: str = "http://localhost:8000") -> User:
@@ -232,6 +235,137 @@ class AuthService:
         )
 
         return {"message": "Verification email sent"}
+
+    async def login(self, email: str, password: str, ip_address: Optional[str] = None) -> dict:
+        """
+        Authenticate user and create session.
+
+        Args:
+            email: User email address
+            password: Plain text password
+            ip_address: Client IP address for logging
+
+        Returns:
+            dict: Session token and user info
+
+        Raises:
+            ValueError: If authentication fails
+
+        Requirements: FR-007, FR-008, FR-009, FR-010
+        """
+        email = email.lower()
+
+        # Find user
+        user = self.db.query(User).filter(User.email == email).first()
+        if not user:
+            # Generic error to not reveal if email exists (security)
+            self.security_logger.log_login_attempt(
+                email=email,
+                success=False,
+                reason="Invalid credentials",
+                ip_address=ip_address
+            )
+            raise ValueError("Invalid email or password")
+
+        # Check if email is verified (FR-008)
+        if not user.email_verified:
+            self.security_logger.log_login_attempt(
+                email=email,
+                success=False,
+                reason="Email not verified",
+                ip_address=ip_address,
+                user_id=user.id
+            )
+            raise ValueError("Please verify your email before logging in")
+
+        # Check if account is locked (FR-010)
+        if user.is_locked:
+            # Check if lockout period has expired
+            if user.locked_until and datetime.utcnow() < user.locked_until:
+                self.security_logger.log_login_attempt(
+                    email=email,
+                    success=False,
+                    reason="Account locked",
+                    ip_address=ip_address,
+                    user_id=user.id
+                )
+                raise ValueError(f"Account is locked until {user.locked_until.isoformat()}Z")
+            else:
+                # Unlock account
+                user.is_locked = False
+                user.locked_until = None
+                user.failed_login_attempts = 0
+                self.db.commit()
+
+        # Verify password
+        if not self.password_service.verify_password(password, user.password_hash):
+            # Increment failed attempts (FR-009)
+            user.failed_login_attempts += 1
+            user.last_failed_login = datetime.utcnow()
+
+            # Lock account if max attempts reached
+            if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
+                user.is_locked = True
+                user.locked_until = datetime.utcnow() + timedelta(
+                    minutes=settings.LOCKOUT_DURATION_MINUTES
+                )
+                self.db.commit()
+
+                self.security_logger.log_account_locked(
+                    user_id=user.id,
+                    email=user.email,
+                    reason=f"Max login attempts ({settings.MAX_LOGIN_ATTEMPTS}) exceeded",
+                    ip_address=ip_address
+                )
+                raise ValueError(f"Account locked due to too many failed login attempts. Try again after {user.locked_until.isoformat()}Z")
+
+            self.db.commit()
+
+            self.security_logger.log_login_attempt(
+                email=email,
+                success=False,
+                reason="Invalid password",
+                ip_address=ip_address,
+                user_id=user.id
+            )
+            raise ValueError("Invalid email or password")
+
+        # Reset failed attempts on successful login
+        user.failed_login_attempts = 0
+        user.last_login = datetime.utcnow()
+
+        # Generate session token (FR-011)
+        session_token = self.jwt_service.generate_session_token(
+            user_id=user.id,
+            email=user.email
+        )
+
+        # Create session record
+        session = Session(
+            user_id=user.id,
+            token=session_token
+        )
+        self.db.add(session)
+        self.db.commit()
+        self.db.refresh(session)
+
+        # Log successful login
+        self.security_logger.log_login_attempt(
+            email=user.email,
+            success=True,
+            ip_address=ip_address,
+            user_id=user.id
+        )
+
+        return {
+            "session_token": session_token,
+            "expires_at": session.expires_at.isoformat() + "Z",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "email_verified": user.email_verified
+            }
+        }
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         """

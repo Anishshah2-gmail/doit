@@ -10,6 +10,7 @@ from src.main import app
 from src.lib.database import Base, get_db
 from src.models.user import User
 from src.models.verification_token import VerificationToken
+from src.models.session import Session
 
 
 # Create test database

@@ -9,6 +9,8 @@ from src.api.schemas import (
     RegisterResponse,
     VerifyEmailResponse,
     ResendVerificationRequest,
+    LoginRequest,
+    LoginResponse,
     MessageResponse,
     ErrorResponse
 )
@@ -169,3 +171,76 @@ async def resend_verification(
         return MessageResponse(
             message="If the email exists and is not verified, a new verification email has been sent."
         )
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid credentials or email not verified"},
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+        403: {"model": ErrorResponse, "description": "Account locked"}
+    }
+)
+async def login(
+    request: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Authenticate user and create session.
+
+    Authenticates user with email and password, creates session token.
+
+    **User Story**: P1 - Existing User Login
+
+    **Requirements**: FR-007, FR-008, FR-009, FR-010, FR-011
+
+    **Process**:
+    1. Validates email and password
+    2. Checks email is verified
+    3. Checks account not locked
+    4. Verifies password with Argon2
+    5. Increments failed attempts on wrong password
+    6. Locks account after 5 failed attempts (30min lockout)
+    7. Creates session with JWT token
+    8. Returns session token (24h expiry)
+
+    **Returns**:
+    - 200: Login successful, session token returned
+    - 400: Invalid credentials
+    - 401: Email not verified
+    - 403: Account locked (too many failed attempts)
+    """
+    auth_service = AuthService(db)
+
+    try:
+        result = await auth_service.login(
+            email=request.email,
+            password=request.password
+        )
+
+        return LoginResponse(
+            message="Login successful",
+            session_token=result["session_token"],
+            expires_at=result["expires_at"],
+            user=result["user"]
+        )
+    except ValueError as e:
+        error_msg = str(e)
+
+        # Determine appropriate status code
+        if "locked" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_msg
+            )
+        elif "verify your email" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_msg
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )

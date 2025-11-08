@@ -44,3 +44,52 @@ async def test_verify_email_invalid_token():
     """Test email verification fails with invalid token"""
     # Will implement after AuthService.verify_email exists
     pass
+
+
+@pytest.mark.asyncio
+async def test_login_success():
+    """Test successful login"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_email():
+    """Test login fails with invalid email"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_password():
+    """Test login fails with wrong password"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_unverified_email():
+    """Test login fails if email not verified"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_account_locked():
+    """Test login fails if account is locked"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_increments_failed_attempts():
+    """Test failed login increments failed attempts counter"""
+    # Will test after login method is implemented
+    pass
+
+
+@pytest.mark.asyncio
+async def test_login_locks_account_after_max_attempts():
+    """Test account gets locked after max failed attempts"""
+    # Will test after login method is implemented
+    pass
